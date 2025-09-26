@@ -1,0 +1,122 @@
+# CRM 服务端项目 - Cursor Rules
+
+## 项目概述
+这是一个基于 Quarkus 框架构建的 CRM (客户关系管理) 系统服务端项目，提供完整的 RESTful API 用于管理客户数据。
+
+## 技术栈规范
+
+### 核心框架
+- **Quarkus**: 使用 Quarkus 框架作为主要开发框架
+- **Java 版本**: 使用 JDK 17+ 进行开发
+- **构建工具**: Maven 3.8+ 或 Gradle
+
+### API 开发
+- **REST API**: 使用 RESTEasy Reactive 构建响应式 RESTful API
+- **JSON 处理**: 使用 RESTEasy Reactive Jackson 进行 JSON 序列化/反序列化
+- **API 文档**: 使用 Quarkus SmallRye OpenAPI 自动生成 API 文档
+
+### 数据层
+- **ORM**: 使用 Hibernate ORM with Panache 简化数据库操作
+- **数据库**: PostgreSQL 作为主数据库
+- **数据库迁移**: 使用 `quarkus.hibernate-orm.database.generation=update` 自动更新表结构
+
+### 安全
+- **认证**: 使用 SmallRye JWT 进行基于 JWT 的声明式安全认证
+- **授权**: API 端点受 JWT 保护，需要在 Header 中提供 `Authorization: Bearer <token>`
+
+## 代码规范
+
+### 项目结构
+- 遵循 Quarkus 标准项目结构
+- 实体类放在 `src/main/java/` 下的适当包中
+- 资源类 (REST 控制器) 使用 JAX-RS 注解
+- 配置文件统一放在 `src/main/resources/application.properties`
+
+### API 开发规范
+- 所有 REST 端点必须使用适当的 HTTP 方法 (GET, POST, PUT, DELETE)
+- 使用 JAX-RS 注解 (`@GET`, `@POST`, `@PUT`, `@DELETE`, `@Path`, `@Consumes`, `@Produces`)
+- 为所有 API 端点添加 OpenAPI 注解 (`@Operation`, `@ApiResponse`, `@Tag`)
+- 使用适当的 HTTP 状态码和错误处理
+
+### 实体类规范
+- 使用 Hibernate Panache 实体基类 (`PanacheEntity`)
+- 为实体类添加适当的 JPA 注解 (`@Entity`, `@Table`, `@Column`)
+- 使用 Lombok 注解简化代码 (`@Data`, `@NoArgsConstructor`, `@AllArgsConstructor`)
+
+### 安全规范
+- 受保护的端点必须使用 `@RolesAllowed` 或 `@PermitAll` 注解
+- JWT 配置必须在 `application.properties` 中正确设置
+- 公钥文件应放在 `META-INF/resources/` 目录下
+
+## 开发环境配置
+
+### 数据库配置
+```properties
+# PostgreSQL 数据源配置
+quarkus.datasource.db-kind=postgresql
+quarkus.datasource.username=your-db-username
+quarkus.datasource.password=your-db-password
+quarkus.datasource.jdbc.url=jdbc:postgresql://localhost:5432/crm_db
+
+# 数据库表结构自动更新
+quarkus.hibernate-orm.database.generation=update
+```
+
+### JWT 配置
+```properties
+# SmallRye JWT 配置
+mp.jwt.verify.publickey.location=META-INF/resources/publicKey.pem
+mp.jwt.verify.issuer=https://your-issuer.com/
+```
+
+## 开发命令
+
+### 启动开发服务器
+```bash
+# 使用 Maven
+./mvnw quarkus:dev
+
+# 使用 Gradle
+./gradlew quarkusDev
+```
+
+### 构建项目
+```bash
+# 使用 Maven
+./mvnw package
+
+# 使用 Gradle
+./gradlew build
+```
+
+## API 文档访问
+- **Swagger UI**: http://localhost:8080/q/swagger-ui
+- 所有 API 端点、请求参数和响应模型都会自动生成文档
+
+## 最佳实践
+
+### 错误处理
+- 使用适当的异常处理机制
+- 返回有意义的错误消息和 HTTP 状态码
+- 记录重要的错误信息
+
+### 性能优化
+- 利用 Quarkus 的响应式特性
+- 使用适当的数据库查询优化
+- 考虑使用缓存机制
+
+### 测试
+- 为所有 API 端点编写单元测试和集成测试
+- 使用 Quarkus 测试框架进行测试
+- 确保测试覆盖率达到合理水平
+
+### 日志记录
+- 使用适当的日志级别
+- 记录重要的业务操作和错误信息
+- 避免记录敏感信息
+
+## 注意事项
+- 这是一个纯后端项目，不包含任何前端页面
+- 所有 API 都应该是 RESTful 的
+- 确保所有配置都在 `application.properties` 中正确设置
+- 开发时使用热重载功能提高开发效率
