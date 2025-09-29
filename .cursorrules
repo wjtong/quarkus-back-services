@@ -25,6 +25,7 @@
 - **大语言模型**: 支持多种 LLM 提供商 (OpenAI, Anthropic, Google, 本地模型等)
 - **向量数据库**: 集成向量数据库用于语义搜索和 RAG (检索增强生成)
 - **AI Agent**: 提供智能客服、数据分析、内容生成等 AI 功能
+- **协作工作流**: 支持基于 AI Agent 的智能协作任务处理系统
 
 ### 安全
 - **认证**: 使用 SmallRye JWT 进行基于 JWT 的声明式安全认证
@@ -57,6 +58,15 @@
 - 为 AI 服务添加适当的错误处理和日志记录
 - AI 相关的配置参数统一在 `application.properties` 中管理
 - 使用 `@RegisterForReflection` 注解确保 AI 相关类在原生编译时可用
+
+### 协作工作流开发规范
+- 工作流类型必须存储在数据库中，不能硬编码业务逻辑
+- 工作流实例代表具体的任务执行过程
+- 工作流步骤定义任务流转的规则和条件
+- AI Agent 根据工作流规则自动处理任务并流转到下一个步骤
+- 工作流处理必须支持条件判断、角色权限、金额阈值等业务规则
+- 工作流状态必须实时更新，支持任务追踪和监控
+- 工作流工具类必须提供任务创建、状态更新、流转控制等功能
 
 ### 安全规范
 - 受保护的端点必须使用 `@RolesAllowed` 或 `@PermitAll` 注解
@@ -102,6 +112,13 @@ langchain4j.embedding.store.dimension=${EMBEDDING_DIMENSION:1536}
 ai.agent.enabled=${AI_AGENT_ENABLED:true}
 ai.agent.max-conversation-history=${AI_AGENT_MAX_HISTORY:10}
 ai.agent.timeout=${AI_AGENT_TIMEOUT:30}
+
+# 协作工作流配置
+workflow.enabled=${WORKFLOW_ENABLED:true}
+workflow.max-concurrent-instances=${WORKFLOW_MAX_INSTANCES:100}
+workflow.default-timeout=${WORKFLOW_DEFAULT_TIMEOUT:3600}
+workflow.auto-retry=${WORKFLOW_AUTO_RETRY:true}
+workflow.max-retry-attempts=${WORKFLOW_MAX_RETRY:3}
 ```
 
 ## 开发命令
@@ -128,6 +145,7 @@ ai.agent.timeout=${AI_AGENT_TIMEOUT:30}
 - **Swagger UI**: http://localhost:8080/q/swagger-ui
 - 所有 API 端点、请求参数和响应模型都会自动生成文档
 - **AI Agent 端点**: `/api/ai/*` - AI 相关的 REST API 端点
+- **工作流端点**: `/api/workflow/*` - 协作工作流相关的 REST API 端点
 
 ## 最佳实践
 
@@ -160,6 +178,15 @@ ai.agent.timeout=${AI_AGENT_TIMEOUT:30}
 - 实现 AI 服务的降级策略，确保系统稳定性
 - 定期监控 AI 服务的性能和成本
 
+### 协作工作流最佳实践
+- 工作流定义必须支持版本管理，便于流程优化和回滚
+- 实现工作流执行的可视化监控和日志记录
+- 支持工作流的暂停、恢复、取消等操作
+- 为工作流步骤设置合理的超时时间和重试机制
+- 实现工作流数据的备份和恢复机制
+- 支持工作流的并行执行和条件分支
+- 为敏感工作流实现审计日志和权限控制
+
 ## 注意事项
 - 这是一个纯后端项目，不包含任何前端页面
 - 所有 API 都应该是 RESTful 的
@@ -169,3 +196,6 @@ ai.agent.timeout=${AI_AGENT_TIMEOUT:30}
 - 注意 AI 服务的成本控制，避免不必要的 API 调用
 - 确保 AI 生成的内容符合业务需求和合规要求
 - 在生产环境中使用适当的 AI 服务提供商和模型
+- 工作流系统必须支持多种业务场景，不能局限于特定业务类型
+- 工作流规则必须从数据库动态加载，支持运行时配置更新
+- 确保工作流执行的可追溯性和数据一致性

@@ -2,304 +2,255 @@ package com.example.crm.service;
 
 import com.example.crm.entity.AiAgent;
 import com.example.crm.entity.AiAgentTask;
-import com.example.crm.entity.AiAgentConversation;
-import com.example.crm.entity.Party;
+import com.example.crm.ai.CrmAiService;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
- * AI Agent 管理服务
- * 负责 AI Agent 的创建、管理和任务分配
+ * AI Agent 服务类
+ * 处理 AI Agent 的任务分配、执行和状态管理
  */
 @ApplicationScoped
 public class AiAgentService {
 
     private static final Logger LOG = Logger.getLogger(AiAgentService.class);
 
-    // 注意：由于循环依赖，这里暂时注释掉，在实际使用时通过直接调用服务
-    // @Inject
-    // AiAgentTaskService taskService;
-
-    // @Inject
-    // AiAgentConversationService conversationService;
+    @Inject
+    CrmAiService crmAiService;
 
     /**
-     * 为员工创建专属 AI Agent
+     * 处理工作流任务
      */
     @Transactional
-    public AiAgent createAgentForEmployee(String employeeId, String agentName, String position, 
-                                        String department, String responsibilities, String permissions) {
+    public String processWorkflowTask(String agentId, String taskDescription, 
+                                    String inputData, String conditions) {
         try {
-            // 检查员工是否存在
-            Party employee = Party.findById(employeeId);
-            if (employee == null) {
-                throw new IllegalArgumentException("员工不存在: " + employeeId);
+            // 获取AI Agent信息
+            AiAgent aiAgent = AiAgent.findById(agentId);
+            if (aiAgent == null) {
+                throw new RuntimeException("AI Agent不存在: " + agentId);
             }
 
-            // 检查是否已存在该员工的 AI Agent
-            AiAgent existingAgent = AiAgent.find("employeeId", employeeId).firstResult();
-            if (existingAgent != null) {
-                throw new IllegalArgumentException("该员工已存在 AI Agent: " + existingAgent.agentId);
+            if (!aiAgent.isActive()) {
+                throw new RuntimeException("AI Agent未激活: " + agentId);
             }
 
-            // 创建新的 AI Agent
-            AiAgent agent = new AiAgent();
-            agent.agentId = generateAgentId();
-            agent.agentName = agentName;
-            agent.employeeId = employeeId;
-            agent.employeeName = employee.getDisplayName();
-            agent.position = position;
-            agent.department = department;
-            agent.responsibilities = responsibilities;
-            agent.permissions = permissions;
-            
-            // 设置默认值
-            agent.isActive = "Y";
-            agent.isLearningEnabled = "Y";
-            agent.priorityLevel = 5;
-            agent.maxConcurrentTasks = 3;
-            agent.responseTimeout = 30;
-            agent.learningRate = 0.1;
-            agent.confidenceThreshold = 0.7;
-            agent.totalInteractions = 0L;
-            agent.successRate = 0.0;
-            agent.averageResponseTime = 0.0;
-            
-            // 设置时间戳
-            LocalDateTime now = LocalDateTime.now();
-            agent.createdDate = now;
-            agent.createdStamp = now;
-            agent.createdTxStamp = now;
-            agent.lastUpdatedStamp = now;
-            agent.lastUpdatedTxStamp = now;
+            // 创建AI Agent任务记录
+            AiAgentTask task = createAiAgentTask(agentId, taskDescription, inputData);
 
-            agent.persist();
-            LOG.info("为员工 " + employeeId + " 创建 AI Agent: " + agent.agentId);
-            
-            return agent;
+            // 构建AI处理提示
+            String aiPrompt = buildWorkflowTaskPrompt(aiAgent, taskDescription, inputData, conditions);
+
+            // 调用AI服务处理任务
+            String result = crmAiService.chat(aiPrompt);
+
+            // 更新任务结果
+            task.setResult(result, "工作流任务处理完成", 0.9);
+            task.persist();
+
+            // 更新AI Agent统计信息
+            aiAgent.updateInteractionStats(true, 1.0);
+            aiAgent.persist();
+
+            LOG.info("AI Agent处理工作流任务成功: " + agentId + ", 任务: " + task.taskId);
+            return result;
+
         } catch (Exception e) {
-            LOG.error("创建 AI Agent 失败", e);
-            throw new RuntimeException("创建 AI Agent 失败: " + e.getMessage());
+            LOG.error("AI Agent处理工作流任务失败: " + agentId, e);
+            throw new RuntimeException("AI Agent处理工作流任务失败: " + e.getMessage());
         }
     }
 
     /**
-     * 更新 AI Agent 信息
+     * 创建AI Agent任务
      */
     @Transactional
-    public AiAgent updateAgent(String agentId, String agentName, String position, 
-                             String department, String responsibilities, String permissions,
-                             String capabilities, String personalityTraits, String communicationStyle) {
+    public AiAgentTask createAiAgentTask(String agentId, String taskDescription, String inputData) {
         try {
-            AiAgent agent = AiAgent.findById(agentId);
-            if (agent == null) {
-                throw new IllegalArgumentException("AI Agent 不存在: " + agentId);
+            AiAgentTask task = new AiAgentTask();
+            task.taskId = generateTaskId();
+            task.agentId = agentId;
+            task.taskTitle = "工作流任务处理";
+            task.taskDescription = taskDescription;
+            task.taskType = "WORKFLOW_TASK";
+            task.status = "IN_PROGRESS";
+            task.priority = 5;
+            task.assignedDate = LocalDateTime.now();
+            task.startedDate = LocalDateTime.now();
+            task.inputData = inputData;
+            task.createdBy = agentId;
+            task.createdDate = LocalDateTime.now();
+            task.lastModifiedDate = LocalDateTime.now();
+            task.lastUpdatedStamp = LocalDateTime.now();
+            task.createdStamp = LocalDateTime.now();
+
+            task.persist();
+            return task;
+        } catch (Exception e) {
+            LOG.error("创建AI Agent任务失败", e);
+            throw new RuntimeException("创建AI Agent任务失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取AI Agent信息
+     */
+    public AiAgent getAiAgent(String agentId) {
+        return AiAgent.findById(agentId);
+    }
+
+    /**
+     * 获取AI Agent任务列表
+     */
+    public List<AiAgentTask> getAiAgentTasks(String agentId, String status) {
+        if (status != null && !status.trim().isEmpty()) {
+            return AiAgentTask.find("agentId = ?1 and status = ?2 order by assignedDate desc", agentId, status).list();
+        } else {
+            return AiAgentTask.find("agentId = ?1 order by assignedDate desc", agentId).list();
+        }
+    }
+
+    /**
+     * 获取所有激活的AI Agent
+     */
+    public List<AiAgent> getActiveAiAgents() {
+        return AiAgent.find("isActive = 'Y' order by agentName").list();
+    }
+
+    /**
+     * 根据角色获取AI Agent
+     */
+    public List<AiAgent> getAiAgentsByRole(String role) {
+        return AiAgent.find("position = ?1 and isActive = 'Y'", role).list();
+    }
+
+    /**
+     * 根据部门获取AI Agent
+     */
+    public List<AiAgent> getAiAgentsByDepartment(String department) {
+        return AiAgent.find("department = ?1 and isActive = 'Y'", department).list();
+    }
+
+    /**
+     * 检查AI Agent是否可以接受新任务
+     */
+    public boolean canAcceptNewTask(String agentId) {
+        try {
+            AiAgent aiAgent = AiAgent.findById(agentId);
+            if (aiAgent == null || !aiAgent.isActive()) {
+                return false;
             }
 
-            // 更新基本信息
-            if (agentName != null) agent.agentName = agentName;
-            if (position != null) agent.position = position;
-            if (department != null) agent.department = department;
-            if (responsibilities != null) agent.responsibilities = responsibilities;
-            if (permissions != null) agent.permissions = permissions;
-            if (capabilities != null) agent.capabilities = capabilities;
-            if (personalityTraits != null) agent.personalityTraits = personalityTraits;
-            if (communicationStyle != null) agent.communicationStyle = communicationStyle;
-
-            // 更新时间戳
-            LocalDateTime now = LocalDateTime.now();
-            agent.lastModifiedDate = now;
-            agent.lastUpdatedStamp = now;
-            agent.lastUpdatedTxStamp = now;
-
-            agent.persist();
-            LOG.info("更新 AI Agent: " + agentId);
+            // 检查当前任务数量
+            Long currentTaskCount = AiAgentTask.count("agentId = ?1 and status in ('PENDING', 'IN_PROGRESS')", agentId);
             
-            return agent;
+            if (aiAgent.maxConcurrentTasks != null && currentTaskCount >= aiAgent.maxConcurrentTasks) {
+                return false;
+            }
+
+            return true;
         } catch (Exception e) {
-            LOG.error("更新 AI Agent 失败", e);
-            throw new RuntimeException("更新 AI Agent 失败: " + e.getMessage());
+            LOG.error("检查AI Agent任务接受能力失败: " + agentId, e);
+            return false;
         }
     }
 
     /**
-     * 激活/停用 AI Agent
+     * 构建工作流任务AI提示
+     */
+    private String buildWorkflowTaskPrompt(AiAgent aiAgent, String taskDescription, 
+                                         String inputData, String conditions) {
+        StringBuilder sb = new StringBuilder();
+        
+        // AI Agent身份信息
+        sb.append("你是").append(aiAgent.agentName).append("，");
+        sb.append("代表").append(aiAgent.employeeName).append("（").append(aiAgent.position).append("）").append("。\n\n");
+        
+        // 任务描述
+        sb.append("任务描述：\n").append(taskDescription).append("\n\n");
+        
+        // 输入数据
+        sb.append("输入数据：\n").append(inputData).append("\n\n");
+        
+        // 处理条件
+        if (conditions != null && !conditions.trim().isEmpty()) {
+            sb.append("处理条件：\n").append(conditions).append("\n\n");
+        }
+        
+        // AI Agent职责和能力
+        if (aiAgent.responsibilities != null) {
+            sb.append("你的职责：\n").append(aiAgent.responsibilities).append("\n\n");
+        }
+        
+        if (aiAgent.capabilities != null) {
+            sb.append("你的能力：\n").append(aiAgent.capabilities).append("\n\n");
+        }
+        
+        // 处理指令
+        sb.append("请根据以上信息，以").append(aiAgent.employeeName).append("的身份处理这个任务。");
+        sb.append("请提供清晰的处理结果和建议，包括是否批准、需要什么条件、下一步应该怎么做等。");
+        sb.append("请用专业、友好的语气回复。");
+        
+        return sb.toString();
+    }
+
+    /**
+     * 生成任务ID
+     */
+    private String generateTaskId() {
+        return "AAT_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16).toUpperCase();
+    }
+
+    /**
+     * 更新AI Agent状态
      */
     @Transactional
-    public AiAgent toggleAgentStatus(String agentId, boolean active) {
+    public void updateAiAgentStatus(String agentId, String status) {
         try {
-            AiAgent agent = AiAgent.findById(agentId);
-            if (agent == null) {
-                throw new IllegalArgumentException("AI Agent 不存在: " + agentId);
+            AiAgent aiAgent = AiAgent.findById(agentId);
+            if (aiAgent != null) {
+                aiAgent.isActive = "Y".equals(status) ? "Y" : "N";
+                aiAgent.lastModifiedDate = LocalDateTime.now();
+                aiAgent.persist();
+                LOG.info("更新AI Agent状态成功: " + agentId + " -> " + status);
             }
-
-            agent.isActive = active ? "Y" : "N";
-            agent.lastModifiedDate = LocalDateTime.now();
-            agent.lastUpdatedStamp = LocalDateTime.now();
-            agent.lastUpdatedTxStamp = LocalDateTime.now();
-
-            agent.persist();
-            LOG.info("AI Agent " + agentId + " 状态变更为: " + (active ? "激活" : "停用"));
-            
-            return agent;
         } catch (Exception e) {
-            LOG.error("更新 AI Agent 状态失败", e);
-            throw new RuntimeException("更新 AI Agent 状态失败: " + e.getMessage());
+            LOG.error("更新AI Agent状态失败: " + agentId, e);
+            throw new RuntimeException("更新AI Agent状态失败: " + e.getMessage());
         }
     }
 
     /**
-     * 获取所有 AI Agent
+     * 获取AI Agent统计信息
      */
-    public List<AiAgent> getAllAgents() {
-        return AiAgent.listAll();
-    }
-
-    /**
-     * 根据员工 ID 获取 AI Agent
-     */
-    public Optional<AiAgent> getAgentByEmployeeId(String employeeId) {
-        return Optional.ofNullable(AiAgent.find("employeeId", employeeId).firstResult());
-    }
-
-    /**
-     * 根据部门获取 AI Agent 列表
-     */
-    public List<AiAgent> getAgentsByDepartment(String department) {
-        return AiAgent.find("department", department).list();
-    }
-
-    /**
-     * 获取活跃的 AI Agent 列表
-     */
-    public List<AiAgent> getActiveAgents() {
-        return AiAgent.find("isActive", "Y").list();
-    }
-
-    /**
-     * 为 AI Agent 分配任务
-     * 注意：这里暂时返回 null，实际使用时应该调用 AiAgentTaskService
-     */
-    @Transactional
-    public AiAgentTask assignTaskToAgent(String agentId, String taskTitle, String taskDescription, 
-                                       String taskType, String inputData, Integer priority) {
+    public String getAiAgentStatistics(String agentId) {
         try {
-            AiAgent agent = AiAgent.findById(agentId);
-            if (agent == null) {
-                throw new IllegalArgumentException("AI Agent 不存在: " + agentId);
+            AiAgent aiAgent = AiAgent.findById(agentId);
+            if (aiAgent == null) {
+                return "AI Agent不存在: " + agentId;
             }
 
-            if (!agent.canAcceptNewTask()) {
-                throw new IllegalStateException("AI Agent " + agentId + " 当前无法接受新任务");
-            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("AI Agent统计信息:\n");
+            sb.append("- Agent名称: ").append(aiAgent.agentName).append("\n");
+            sb.append("- 员工: ").append(aiAgent.employeeName).append("\n");
+            sb.append("- 职位: ").append(aiAgent.position).append("\n");
+            sb.append("- 部门: ").append(aiAgent.department).append("\n");
+            sb.append("- 状态: ").append(aiAgent.isActive() ? "激活" : "未激活").append("\n");
+            sb.append("- 总交互次数: ").append(aiAgent.totalInteractions != null ? aiAgent.totalInteractions : 0).append("\n");
+            sb.append("- 成功率: ").append(aiAgent.successRate != null ? String.format("%.2f%%", aiAgent.successRate * 100) : "0%").append("\n");
+            sb.append("- 平均响应时间: ").append(aiAgent.averageResponseTime != null ? String.format("%.2f秒", aiAgent.averageResponseTime) : "0秒").append("\n");
 
-            // 实际使用时应该调用 taskService.createTask()
-            // 这里暂时返回 null，避免循环依赖
-            LOG.info("为 AI Agent " + agentId + " 分配任务: " + taskTitle);
-            return null;
+            return sb.toString();
         } catch (Exception e) {
-            LOG.error("为 AI Agent 分配任务失败", e);
-            throw new RuntimeException("分配任务失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 获取 AI Agent 的任务列表
-     */
-    public List<AiAgentTask> getAgentTasks(String agentId) {
-        return AiAgentTask.find("agentId", agentId).list();
-    }
-
-    /**
-     * 获取 AI Agent 的对话历史
-     */
-    public List<AiAgentConversation> getAgentConversations(String agentId) {
-        return AiAgentConversation.find("agentId", agentId).list();
-    }
-
-    /**
-     * 训练 AI Agent
-     */
-    @Transactional
-    public AiAgent trainAgent(String agentId, String trainingData) {
-        try {
-            AiAgent agent = AiAgent.findById(agentId);
-            if (agent == null) {
-                throw new IllegalArgumentException("AI Agent 不存在: " + agentId);
-            }
-
-            // 更新训练信息
-            agent.lastTrainingDate = LocalDateTime.now();
-            agent.knowledgeBase = trainingData;
-            agent.lastModifiedDate = LocalDateTime.now();
-            agent.lastUpdatedStamp = LocalDateTime.now();
-            agent.lastUpdatedTxStamp = LocalDateTime.now();
-
-            agent.persist();
-            LOG.info("AI Agent " + agentId + " 训练完成");
-            
-            return agent;
-        } catch (Exception e) {
-            LOG.error("训练 AI Agent 失败", e);
-            throw new RuntimeException("训练 AI Agent 失败: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 获取 AI Agent 统计信息
-     */
-    public String getAgentStatistics(String agentId) {
-        try {
-            AiAgent agent = AiAgent.findById(agentId);
-            if (agent == null) {
-                throw new IllegalArgumentException("AI Agent 不存在: " + agentId);
-            }
-
-            List<AiAgentTask> tasks = getAgentTasks(agentId);
-            List<AiAgentConversation> conversations = getAgentConversations(agentId);
-
-            long completedTasks = tasks.stream().filter(AiAgentTask::isCompleted).count();
-            long failedTasks = tasks.stream().filter(AiAgentTask::isFailed).count();
-            long pendingTasks = tasks.stream().filter(AiAgentTask::isPending).count();
-
-            double avgSatisfaction = conversations.stream()
-                .filter(c -> c.satisfactionRating != null)
-                .mapToInt(c -> c.satisfactionRating)
-                .average()
-                .orElse(0.0);
-
-            StringBuilder stats = new StringBuilder();
-            stats.append("AI Agent 统计信息:\n");
-            stats.append("Agent ID: ").append(agent.agentId).append("\n");
-            stats.append("员工: ").append(agent.employeeName).append("\n");
-            stats.append("职位: ").append(agent.position).append("\n");
-            stats.append("部门: ").append(agent.department).append("\n");
-            stats.append("状态: ").append(agent.isActive() ? "激活" : "停用").append("\n");
-            stats.append("总交互次数: ").append(agent.totalInteractions).append("\n");
-            stats.append("成功率: ").append(String.format("%.2f%%", agent.successRate * 100)).append("\n");
-            stats.append("平均响应时间: ").append(String.format("%.2f秒", agent.averageResponseTime)).append("\n");
-            stats.append("完成任务: ").append(completedTasks).append("\n");
-            stats.append("失败任务: ").append(failedTasks).append("\n");
-            stats.append("待处理任务: ").append(pendingTasks).append("\n");
-            stats.append("平均满意度: ").append(String.format("%.2f", avgSatisfaction)).append("\n");
-
-            return stats.toString();
-        } catch (Exception e) {
-            LOG.error("获取 AI Agent 统计信息失败", e);
+            LOG.error("获取AI Agent统计信息失败: " + agentId, e);
             return "获取统计信息失败: " + e.getMessage();
         }
-    }
-
-    /**
-     * 生成唯一的 Agent ID
-     */
-    private String generateAgentId() {
-        return "AGENT_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8).toUpperCase();
     }
 }
